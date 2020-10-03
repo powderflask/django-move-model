@@ -66,7 +66,7 @@ Many strategies have been devised, here are some of the more reasonable ones I e
 
     * Exemplified by : https://wellfire.co/this-old-pony/refactoring-django-apps--a-better-way-of-moving-models--this-old-pony-33/
     * Basic Idea:
-        - employ a "Neutered Migration" to update model history in migrations file without actually chaning DB
+        - employ a "Neutered Migration" to update model history in migrations file without actually changing DB
     * Pros: reproducible; flexible; no "fake" migrations; maintains migration history
     * Cons: post-hoc clean-up:
             requires origin app and its migrations are left in place, then eventually moved to dest model and squashed
