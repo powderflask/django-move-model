@@ -146,7 +146,7 @@ This project contains an origin and destination app with all the migration scrip
 
 To walk through the demo, start by creating the model on the ``origin`` app::
 
-    > django-admin migrate origin 0002_modeltomove_newfield
+    > django-admin migrate origin 0002_modeltomove_new_field
 
 Now you can run some tests with the origin model::
 
@@ -158,7 +158,7 @@ Do the model re-factor simply by commenting out ``origin.models.ModelToMove`` cl
 
 Run migrations to accompany the refactor::
 
-    > django-admin migatate origin
+    > django-admin migrate origin
     > django-admin migrate destination --fake-initial
 
 
