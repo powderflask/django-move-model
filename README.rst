@@ -84,6 +84,7 @@ https://gist.github.com/bennylope/07f0860aeb3ca2eb66656cfdf2396854#file-migratio
 
     * Pros: reproducible and reversible, clean migration history; safe*; little to no post-hoc clean up
     * Cons: migration history for model not retained; need to hand-edit one migration file;
+    * *Use it?*  when you want a clean migration history and to remove origin migrations completely
 
 * Note by "safe" I mean that even if you forget to use the ``--fake_initial`` flag during a migration,
     no data will be lost;  worst that happens is an error when migrations run indicating table already exists.
@@ -127,14 +128,18 @@ ______________________
         see origin.migrations.0003_delete_modeltomove
             destination.migrations.0001_initial
 
-    - Deploy migrations (sequence is CRITICAL)::
+    - Deploy migrations::
 
-        > migrate origin  # NeuteredMigration prevents error due to table not existing
-        > migrate destination --fake-intial  # if you forget --fake-initial, fails with "table already exists"
+        > django-admin migrate origin  # NeuteredMigration prevents error due to table not existing
+        > django-admin migrate destination --fake-intial  # if you forget --fake-initial, fails with "table already exists"
 
     Have a beer.
 
     - once all models are migrated out of origin app, all its migrations can be deleted without issue
+
+    - Note: FK dependencies to moved model can cause migration issues.
+        If there are dependencies between the 2 migration steps, ensure both are done in a single migrate
+        command by doing only the second (dependent) migration.
 
 
 Running this demo:
