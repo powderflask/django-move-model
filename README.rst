@@ -68,7 +68,7 @@ Many strategies have been devised, here are some of the more reasonable ones I e
     * Basic Idea:
         - employ a "Neutered Migration" to update model history in migrations file without actually changing DB
     * Pros: reproducible; flexible; no "fake" migrations; maintains migration history
-    * Cons: post-hoc clean-up:
+    * Cons: post-hoc clean-up,
             requires origin app and its migrations are left in place, then eventually moved to dest model and squashed
     * *Use it?*  **Yes** but read on!!
 
@@ -76,17 +76,17 @@ Many strategies have been devised, here are some of the more reasonable ones I e
 Hybrid Strategy
 -----------------
 
-The strategy documented below is a hybrid of strategies (D) and (C)
+The strategy documented below is a hybrid of strategies (D) and (A)
 (Neutered DeleteModel w/ fake CreateModel + SQL migration to rename model's DB table).
 
 I owe a debt of gratitude to bennylope for his marvelous NeuteredMigrations code:
 https://gist.github.com/bennylope/07f0860aeb3ca2eb66656cfdf2396854#file-migrations-py
 
     * Pros: reproducible and reversible, clean migration history; safe*; little to no post-hoc clean up
-    * Cons: loses migration history for model; need to hand-edit one migration file;
+    * Cons: migration history for model not retained; need to hand-edit one migration file;
 
-* Note: by "safe" I mean that even if you forget to use the ``--fake_initial`` flag during a migration,
-    no date will be lost;  worst that happens is an error message indicating table already exists.
+* Note by "safe" I mean that even if you forget to use the ``--fake_initial`` flag during a migration,
+    no data will be lost;  worst that happens is an error when migrations run indicating table already exists.
 
 Model Migration Steps:
 ______________________
@@ -161,8 +161,7 @@ Run migrations to accompany the refactor::
     > django-admin migrate origin
     > django-admin migrate destination --fake-initial
 
-
-Renames DB table and records migrations history to DeleteModel in origin app, and CreateModel in destination app;
+(renames DB table and records migrations history to DeleteModel in origin app, and CreateModel in destination app)
 
 Now you can run some tests with the migrated model::
 
