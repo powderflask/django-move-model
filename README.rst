@@ -1,4 +1,4 @@
-A Strategy for Moving Django Models between apps
+An App for Moving Django Models between apps
 ================================================
 
 Django migrations are a blessing.
@@ -9,7 +9,8 @@ Problem:
 --------
 You are re-factoring a (legacy) app and need to move a Model class to a different app.
 You need to ensure (production) data in the DB is maintained and available to the destination app.
-Issue: django provides no built-in mechanism to manage the schema + data migrations neccessary to accomplish this.
+You want the DB table names to be consistent with the code's new app-structure.
+Issue: django provides no out-of-the-box solution to manage the schema + data migrations neccessary to accomplish this.
 
 Purpose:
 --------
@@ -24,45 +25,13 @@ Many strategies have been devised, here are some of the more reasonable ones I e
 
     * Exemplified by : https://simpleisbetterthancomplex.com/tutorial/2016/07/26/how-to-reset-migrations.html
     * Basic Idea:
-        - run a fake reverse migration on origin app:
-            ``> django-admin migrate --fake origin_app zero``
-        - re-factor origin app code and remove all migration files
-        - set explicit table names on model.Meta OR rename db tables to use django default (applabel_modelname)
-        - make and run fake intial migration on desitnation app:
-            ``> django-admin makemigrations dest_app``
+        - use ``--fake`` migrations to update migration state in origin and destination apps
+        - hard-code ``db_table`` in moved model(s), or rename table(s) of moved model(s) to match django defaults
+    * Pros: clean migration history; fairly simple; no custom SQL or data migrations
+    * Cons: carefully orchastrated deployment script;  mistakes may cause data loss; not trivial to reproduce or reverse
+    * *Use it?* if you are moving ALL the models to NEW apps; reproducibiility and reversiblity not important
 
-            ``> django-admin migrate --fake-initial dest_app``
-    * Pros: clean migration history; easy to undestand; no custom SQL or data migrations
-    * Cons: carefully orchastrated deployment script;  mistakes may cause data loss
-    * *Use it?* when you are moving ALL the models from origin to NEW apps
-
- B) Data Migration:
-
-    * Basic Idea:
-        - re-factor origin app code leaving origin app in-place
-        - run initial migration:
-            ``> django-admin makemigrations dest_app``
-
-            ``> django-admin migrate dest_app``
-        - add custom data migration to copy data from old table to new one with reverse doing nothing
-        - run the migration:   ``> django-admin migrate dest_app``
-        - once prod. migration complete, remove old app, delete orig. tables, reverse data migration (null), and remove it
-    * Pros: clean migration history; easy to undestand;
-    * Cons: not re-producible / will not work when tests try to run migrations; post-hoc clean-up required
-    * *Use it?*  **Don't**
-
- C) SQL Monkey-patching:
-
-    * Basic Idea:
-        - refactor app code, moving all models and migrations together to new package
-        - develop SQL script to
-            1) rename model table(s) to use django default (applabel_modelname)
-            2) modify app name in migrations table
-    * Pros: simple; maintains migration history
-    * Cons: custom SQL script required; only works when all models are moving together to new app
-    * *Use it?*  **Don't**
-
- D) "Neutered Migrations"
+ B) "Neutered Migrations"
 
     * Exemplified by : https://wellfire.co/this-old-pony/refactoring-django-apps--a-better-way-of-moving-models--this-old-pony-33/
     * Basic Idea:
@@ -72,15 +41,21 @@ Many strategies have been devised, here are some of the more reasonable ones I e
             requires origin app and its migrations are left in place, then eventually moved to dest model and squashed
     * *Use it?*  **Yes** but read on!!
 
+ C) "SeparateDatabaseAndState with AlterModelTable"
 
-Hybrid Strategy
+    * Exemplified by : https://realpython.com/move-django-model/#the-django-way-rename-the-table
+    * Basic Idea:
+        - perform code refactor and makemigrations for both origin and destination apps, as normal
+        - edit migrations and substitute SeparateDatabaseAndState for migration operations
+        - use AlterModelTable
+    * Pros: reproducible; reversible, flexible; no "fake" migrations; clean migration history; no post-hoc cleanup
+    * Cons: hard-to-remember, hand-edited migration code required.
+    * *Use it?*  **Absolutely!** but read on!!
+
+An App to do That
 -----------------
 
-The strategy documented below is a hybrid of strategies (D) and (A)
-(Neutered DeleteModel w/ fake CreateModel + SQL migration to rename model's DB table).
-
-I owe a debt of gratitude to bennylope for his marvelous NeuteredMigrations code:
-https://gist.github.com/bennylope/07f0860aeb3ca2eb66656cfdf2396854#file-migrations-py
+The strategy documented below is based on strategy (C), but packaged as a small django app to keep things simple.
 
     * Pros: reproducible and reversible, clean migration history; safe*; little to no post-hoc clean up
     * Cons: migration history for model not retained; need to hand-edit one migration file;
@@ -92,7 +67,7 @@ https://gist.github.com/bennylope/07f0860aeb3ca2eb66656cfdf2396854#file-migratio
 Model Migration Steps:
 ______________________
 
-    **IMPORTANT**: ensure all migrations are up-to-date in both the origin and destination app
+    **Best Practice**: ensure all migrations are up-to-date in both the origin and destination app
         ``> django-admin makemigrations --dry-run origin destination``
 
     1. refactor app code, moving model(s) from origin app to destination app (using normal re-factoring process)
@@ -100,46 +75,33 @@ ______________________
     2. makemigrations for both origin and destination apps (DeleteModel in origin and CreateModel in destination)
         ``> django-admin makemigrations origin destination``
 
-    3. edit the new origin app migration script to 'monkey-patch' the db table:
-        i) modify the migration to make it a "NeuteredMigration"::
+    3. edit the new origin app migration script and replace the ``DeleteModel`` migration operation with
+        `move_model.operations.MoveModelOut` -- simply change the name of the operation and
+        add a 'table' argument to provide the destination table name -- {applabel}_{modelname} by default.
 
-            from neutered_migration import migrations
-
-            class Migration(migrations.NeuteredMigration):
-                ...
-
-        ii) surreptitiously rename DB table to default in destination app
-
-           Insert this SQL migration to re-name the db table AHEAD of the DeleteModel migration::
-
-            from django.db.migrations.operations import RunSQL
-
-            RunSQL(
-                sql = [
-                    "ALTER TABLE {origin} RENAME TO {destination};".format(
-                    origin=orgin_table_name, destination=destination_table_name),
-                ],
-                reverse_sql=[
-                    "ALTER TABLE {destination} RENAME TO {origin};".format(
-                        origin=orgin_table_name, destination=destination_table_name),
-                ]
-            )
+        This custom operation applies ``DeleteModel`` to the migration state, but uses an ``AlterModelTable``
+        operation to rename the DB table rather than deleting it.
 
         see origin.migrations.0003_delete_modeltomove
-            destination.migrations.0001_initial
 
-    - Deploy migrations::
+    4. edit the destination app migration script and replace the ``CreateModel`` migration operation with
+        `move_model.operations.MoveModelIn` (literally simply replace name of operation).
 
-        > django-admin migrate origin  # NeuteredMigration prevents error due to table not existing
-        > django-admin migrate destination --fake-intial  # if you forget --fake-initial, fails with "table already exists"
+        This custom operation applies ``CreateModel`` to the migration state, but prevents any DB operation,
+        since the table, along with all its data, already exists!
+
+        see destination.migrations.0001_initial
+
+    5. Deploy the migrations::
+
+        > django-admin migrate
 
     Have a beer.
 
-    - once all models are migrated out of origin app, all its migrations can be deleted without issue
-
-    - Note: FK dependencies to moved model can cause migration issues.
-        If there are dependencies between the 2 migration steps, ensure both are done in a single migrate
-        command by doing only the second (dependent) migration.
+Tutorial
+--------
+For a more detailed explanation and tutoral, see: https://realpython.com/move-django-model/#the-django-way-rename-the-table
+This app simply packages up the migration operations to make them easier to re-write.
 
 
 Running this demo:
@@ -159,14 +121,12 @@ Now you can run some tests with the origin model::
     >>> ModelToMove.objects.create(title='New Item')
     >>> ...
 
-Do the model re-factor simply by commenting out ``origin.models.ModelToMove`` class definition.
+The model code re-factor is already done (see ``destination.models``).
+Run remainder of migrations to complete the DB refactor::
 
-Run migrations to accompany the refactor::
+    > django-admin migrate
 
-    > django-admin migrate origin
-    > django-admin migrate destination --fake-initial
-
-(renames DB table and records migrations history to DeleteModel in origin app, and CreateModel in destination app)
+(renames DB table and updates migration state history to DeleteModel in origin app, and CreateModel in destination app)
 
 Now you can run some tests with the migrated model::
 
@@ -175,3 +135,15 @@ Now you can run some tests with the migrated model::
     >>> ...
 
 Voila.
+
+
+Kudos
+-----
+
+I owe a debt of gratitude to bennylope for his marvelous NeuteredMigrations idea that got me started:
+https://gist.github.com/bennylope/07f0860aeb3ca2eb66656cfdf2396854#file-migrations-py
+
+and another to Haki Benita over at _RealPython: https://realpython.com/ for a clear tutorial on how to apply
+``SeparateDatabaseAndState`` and ``AlterModelTable`` migration operations to achieve this end
+
+Gotta love open source!
