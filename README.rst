@@ -58,11 +58,12 @@ An App to do That
 The strategy documented below is based on strategy (C), but packaged as a small django app to keep things simple.
 
     * Pros: reproducible and reversible, clean migration history; safe*; little to no post-hoc clean up
-    * Cons: migration history for model not retained; need to hand-edit one migration file;
-    * *Use it?*  when you want a clean migration history and to remove origin migrations completely
+    * Cons: migration history for model not retained; need to hand-edit 2 migration files;
+    * *Use it?*  when you want a clean migration history and to (eventually) remove origin migrations completely
 
-* Note by "safe" I mean that even if you forget to use the ``--fake_initial`` flag during a migration,
-    no data will be lost;  worst that happens is an error when migrations run indicating table already exists.
+* Note by "safe" I mean that once you have swapped out the DeleteModel and CreateModel migration operations, there is
+  the migrations can be run in any sequence with no possibility of any data loss.  There may be other issues to work
+  out if your models have complicated relations and migration histories, but the worst that happens is the migration fails.
 
 Model Migration Steps:
 ______________________
@@ -76,8 +77,8 @@ ______________________
         ``> django-admin makemigrations origin destination``
 
     3. edit the new origin app migration script and replace the ``DeleteModel`` migration operation with
-        `move_model.operations.MoveModelOut` -- simply change the name of the operation and
-        add a 'table' argument to provide the destination table name -- {applabel}_{modelname} by default.
+        ``move_model.operations.MoveModelOut`` -- simply change the name of the operation and
+        add a 'table' argument to provide the destination table name -- {applabel}_{modelname} is django default.
 
         This custom operation applies ``DeleteModel`` to the migration state, but uses an ``AlterModelTable``
         operation to rename the DB table rather than deleting it.
@@ -85,7 +86,7 @@ ______________________
         see origin.migrations.0003_delete_modeltomove
 
     4. edit the destination app migration script and replace the ``CreateModel`` migration operation with
-        `move_model.operations.MoveModelIn` (literally simply replace name of operation).
+        ``move_model.operations.MoveModelIn`` (literally simply replace name of operation).
 
         This custom operation applies ``CreateModel`` to the migration state, but prevents any DB operation,
         since the table, along with all its data, already exists!
